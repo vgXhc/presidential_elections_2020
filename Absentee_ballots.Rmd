@@ -1,0 +1,81 @@
+---
+title: "2020 Elections in Madison"
+author: "Harald Kliems"
+date: "11/3/2020"
+output: html_document
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(
+   echo=F, results=F, message=F, error=F, warning=F
+)
+```
+
+# Absentee ballots
+
+Local journalist [Jason Joyce](https://twitter.com/jjoyce) compiled data on absentee ballots returned in a [neat spreadsheet](https://docs.google.com/spreadsheets/d/15cIkjmRWpipYfBNtUbVuS4_aaVEuSIXv2DbNEx5k00I/edit#gid=613969698). He last updated the data on November 1. I quickly wrote some code to create maps of his data.
+
+```{r}
+library(tidyverse)
+library(googlesheets4)
+library(tidycensus)
+library(tmap)
+library(sf)
+```
+
+
+```{r}
+gs4_deauth()
+absentee <- read_sheet("https://docs.google.com/spreadsheets/d/15cIkjmRWpipYfBNtUbVuS4_aaVEuSIXv2DbNEx5k00I/edit#gid=613969698", skip = 2, n_max = 134, col_types = "iiiinininin", col_names = c("WARD", "not_returned", "returned", "total", "perc_returned", "reg_voters", "perc_reg_voters", "2016_voters", "perc_2016_voters", "2016_absentee", "perc_2016_absentee")) %>% 
+  drop_na(any_of("perc_returned"))
+```
+
+```{r}
+# Ward shapefile from City of Madison OpenData portal
+wards <- read_sf("data/Wards.shp")
+```
+
+Here is the percentage of absentee ballots returned versus requested. I filtered out wards with fewer than 15 registered voters.
+```{r}
+absentee_sf <- wards %>% 
+  inner_join(absentee, by = "WARD") %>% 
+  mutate(perc_returned = round(perc_returned *100, 1),
+         perc_2016_voters = round(perc_2016_voters * 100, 1)) %>% 
+  select(-OBJECTID)
+```
+
+
+```{r results= T}
+
+tmap_mode("view")
+absentee_sf %>% 
+  filter(reg_voters > 15) %>% 
+tm_shape() +
+  tm_polygons("perc_returned",
+              style = "jenks",
+              title = "Absentee ballots returned<br> as of Nov 1",
+              popup.vars = c("Absentee ballots returned (%)" = "perc_returned",
+                             "Ward" = "WARD",
+                             "Number of absentee ballots returned" = "returned"),
+              legend.format=list(fun=function(x) paste0(formatC(x, digits=0, format="f"), "%")))
+```
+
+And here are the absentee ballots returned compared to total votes cast in the 2016 election. I filtered out wards with fewer than 15 total votes in 2016, as they messed up the scale.
+
+```{r results=T}
+
+absentee_sf %>% 
+  filter(`2016_voters` > 15) %>% 
+tm_shape("WARD") +
+  tm_polygons("perc_2016_voters",
+              alpha = .7,
+              style = "jenks",
+              popup.vars = c("2020 absentee returned vs 2016 total (%)" = "perc_2016_voters",
+                             "Ward" = "WARD",
+                             "Number of absentee ballots returned" = "returned"),
+              title = "2020 absentee ballots returned<br>compared to 2016 total votes",
+              legend.format=list(fun=function(x) paste0(formatC(x, digits=0, format="f"), "%")))
+```
+
+Note the low percentages on and around the UW campus and the high percentages on the far west and far east sides. 
+
